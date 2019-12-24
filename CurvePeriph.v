@@ -3,7 +3,7 @@ module CurvePeriph
     // I2C controller interface
     subaddr_7_0_out, wr_bus_7_0_out, wr_pulse, rd_bus_7_0_in, rd_pulse,
     // done INT output
-    done,
+    done_int,
     // Required
     input reset, clk
 );
@@ -18,9 +18,10 @@ input wire rd_pulse;
 // signals TO curve25519 core
 reg [254:0] n; // scalar
 reg [254:0] q; // point
+wire start;
 
 // Signals FROM curve25519 core
-output wire done;
+output wire done_int;
 reg [254:0] result;
 
 // Control Register
@@ -29,6 +30,7 @@ reg [254:0] result;
 // - in-progress bit
 // - interrupt enable
 // - SW clear/reset
+localparam CTRL_START_BIT=0, CTRL_DONE_BIT=1, CTRL_INPROG_BIT=2, CTRL_INTEN_BIT=3, CTRL_SWCLEAR_BIT=4;
 reg [7:0] ctrl_reg;
 
 // Instantiate our Cureve25519 calculation core
@@ -41,9 +43,9 @@ Curve25519 curve25519_core(
     .q(q), // point
     .result(result), //result
 
-    // .start is not exposed
+    .start(ctrl_reg[CTRL_START_BIT]),
     // done INT output
-    .done(done)
+    .done(done_int)
 );
 
 /* Register map
@@ -52,6 +54,43 @@ Curve25519 curve25519_core(
     addr 0x40 to 0x59 --> result
     addr 0x60         --> ctrl_reg
 */
+
+always @(posedge clk)
+begin
+
+    if( reset )
+    begin
+        n = 0; q = 0; result = 0;
+    end
+    else
+    begin
+        // On write operation
+        if( wr_pulse )
+        begin
+            if ( (subaddr_7_0_out >= 'h00) && (subaddr_7_0_out < 'h20) )
+                n[ subaddr_7_0_out*8 ] = wr_bus_7_0_out;
+            else if ( (subaddr_7_0_out >= 'h20) && (subaddr_7_0_out < 'h40) )
+                q[ (subaddr_7_0_out-'h20)*8 ] = wr_bus_7_0_out;
+            else if ( subaddr_7_0_out == 'h60 )
+                ctrl_reg = wr_bus_7_0_out;
+        end // wr_pulse
+
+        // on Read operation
+        if( rd_pulse )
+        begin
+            if ( (subaddr_7_0_out >= 'h00) && (subaddr_7_0_out < 'h20) )
+                rd_bus_7_0_in = n[ subaddr_7_0_out ];
+            else if ( (subaddr_7_0_out >= 'h20) && (subaddr_7_0_out < 'h40) )
+                rd_bus_7_0_in = q[ (subaddr_7_0_out-'h20)*8 ];
+            else if ( (subaddr_7_0_out >= 'h40) && (subaddr_7_0_out) < 'h60 )
+                rd_bus_7_0_in = result[ (subaddr_7_0_out-'h40)*8 ];
+            else if ( subaddr_7_0_out == 'h60 )
+                rd_bus_7_0_in = ctrl_reg;
+        end // rd_pulse
+    end
+
+    ctrl_reg[CTRL_DONE_BIT] <= done_int;
+
 
 // TODO: implement read/write/lookup/start logic
 /*
@@ -85,5 +124,7 @@ Curve25519 curve25519_core(
 
     assign done to ctrl_reg[ DONE_BIT ]
 */
+
+end
 
 endmodule //CurvePeriph
