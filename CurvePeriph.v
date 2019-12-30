@@ -5,14 +5,18 @@ module CurvePeriph
     // done INT output
     done_int,
     // Required
-    input reset, clk
+    reset, clk
 );
+
+// Required
+input wire reset;
+input wire clk;
 
 // I2CSlave interface:
 input wire [7:0] subaddr_7_0_out;
 input wire [7:0] wr_bus_7_0_out;
 input wire wr_pulse;
-input wire [7:0] rd_bus_7_0_in;
+output reg [7:0] rd_bus_7_0_in;
 input wire rd_pulse;
 
 // signals TO curve25519 core
@@ -22,6 +26,7 @@ wire start;
 
 // Signals FROM curve25519 core
 output wire done_int;
+wire [254:0] result_wire;
 reg [254:0] result;
 
 // Control Register
@@ -41,7 +46,7 @@ Curve25519 curve25519_core(
     // Input and output values
     .n(n), // scalar
     .q(q), // point
-    .result(result), //result
+    .result(result_wire), //result
 
     .start(ctrl_reg[CTRL_START_BIT]),
     // done INT output
@@ -87,9 +92,12 @@ begin
             else if ( subaddr_7_0_out == 'h60 )
                 rd_bus_7_0_in = ctrl_reg;
         end // rd_pulse
+
+		if( done_int )
+			result = result_wire;
     end
 
-    ctrl_reg[CTRL_DONE_BIT] <= done_int;
+    ctrl_reg[CTRL_DONE_BIT] = done_int;
 
 
 // TODO: implement read/write/lookup/start logic
